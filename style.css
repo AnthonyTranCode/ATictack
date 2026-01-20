@@ -44,7 +44,6 @@ h1 {
     gap: 10px;
     margin: 0 auto 30px;
     justify-content: center;
-    position: relative;
 }
 
 .cell {
@@ -65,11 +64,11 @@ h1 {
     transform: scale(1.05);
 }
 
-.cell.y {
+.cell.x {
     color: #667eea;
 }
 
-.cell.z {
+.cell.o {
     color: #f093fb;
 }
 
@@ -108,77 +107,6 @@ h1 {
 
 #resetButton:active {
     transform: translateY(0);
-}
-
-/* Placement animation */
-@keyframes placeAnimation {
-    0% {
-        transform: scale(0) rotate(0deg);
-        opacity: 0;
-    }
-    50% {
-        transform: scale(1.3) rotate(180deg);
-    }
-    100% {
-        transform: scale(1) rotate(360deg);
-        opacity: 1;
-    }
-}
-
-.cell.placed {
-    animation: placeAnimation 0.5s ease-out;
-}
-
-/* Explosion animation */
-@keyframes explode {
-    0% {
-        transform: scale(1);
-        opacity: 1;
-    }
-    50% {
-        transform: scale(1.5);
-        opacity: 0.8;
-    }
-    100% {
-        transform: scale(2.5);
-        opacity: 0;
-    }
-}
-
-@keyframes shake {
-    0%, 100% { transform: translateX(0); }
-    25% { transform: translateX(-10px) rotate(-5deg); }
-    75% { transform: translateX(10px) rotate(5deg); }
-}
-
-.cell.exploding {
-    animation: explode 0.6s ease-out forwards, shake 0.3s ease-in-out;
-    background: radial-gradient(circle, #ff6b6b, #ff8e53, #ffd93d);
-}
-
-/* Particle effects for explosion */
-.particle {
-    position: absolute;
-    width: 10px;
-    height: 10px;
-    border-radius: 50%;
-    pointer-events: none;
-    z-index: 1000;
-}
-
-@keyframes particle-burst {
-    0% {
-        transform: translate(0, 0) scale(1);
-        opacity: 1;
-    }
-    100% {
-        transform: translate(var(--tx), var(--ty)) scale(0);
-        opacity: 0;
-    }
-}
-
-.particle {
-    animation: particle-burst 0.8s ease-out forwards;
 }
 
 @media (max-width: 500px) {
