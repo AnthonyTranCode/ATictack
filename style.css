@@ -44,6 +44,7 @@ h1 {
     gap: 10px;
     margin: 0 auto 30px;
     justify-content: center;
+    position: relative;
 }
 
 .cell {
@@ -75,6 +76,61 @@ h1 {
 .cell.winner {
     background: #4CAF50;
     color: white;
+    animation: winnerPulse 0.5s ease-in-out infinite alternate;
+}
+
+@keyframes winnerPulse {
+    0% {
+        transform: scale(1);
+    }
+    100% {
+        transform: scale(1.1);
+    }
+}
+
+/* Explosion animation */
+@keyframes explode {
+    0% {
+        transform: scale(1);
+        opacity: 1;
+    }
+    50% {
+        transform: scale(1.5) rotate(10deg);
+        opacity: 0.8;
+    }
+    100% {
+        transform: scale(2) rotate(-10deg);
+        opacity: 0;
+    }
+}
+
+.cell.exploding {
+    position: relative;
+    animation: explode 0.8s ease-out;
+}
+
+/* Particle effects */
+.particle {
+    position: absolute;
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    pointer-events: none;
+}
+
+@keyframes particle-burst {
+    0% {
+        transform: translate(0, 0) scale(1);
+        opacity: 1;
+    }
+    100% {
+        transform: translate(var(--tx), var(--ty)) scale(0);
+        opacity: 0;
+    }
+}
+
+.particle {
+    animation: particle-burst 1s ease-out forwards;
 }
 
 .cell.disabled {

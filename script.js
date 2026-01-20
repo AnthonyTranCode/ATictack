@@ -7,6 +7,7 @@ let gameActive = true;
 const cells = document.querySelectorAll('.cell');
 const statusDisplay = document.getElementById('status');
 const resetButton = document.getElementById('resetButton');
+const boardElement = document.getElementById('board');
 
 // Winning combinations
 const winningCombinations = [
@@ -86,7 +87,50 @@ function checkResult() {
 function highlightWinningCells(combo) {
     combo.forEach(index => {
         cells[index].classList.add('winner');
+        createExplosion(cells[index]);
     });
+}
+
+// Create explosion effect with particles
+function createExplosion(cell) {
+    const rect = cell.getBoundingClientRect();
+    const boardRect = boardElement.getBoundingClientRect();
+
+    // Calculate center position relative to board
+    const centerX = rect.left - boardRect.left + rect.width / 2;
+    const centerY = rect.top - boardRect.top + rect.height / 2;
+
+    // Create particles
+    const particleCount = 20;
+    const colors = ['#FFD700', '#FF6347', '#FF69B4', '#00CED1', '#9370DB', '#32CD32'];
+
+    for (let i = 0; i < particleCount; i++) {
+        const particle = document.createElement('div');
+        particle.className = 'particle';
+
+        // Random angle and distance for burst effect
+        const angle = (Math.PI * 2 * i) / particleCount + (Math.random() - 0.5) * 0.5;
+        const distance = 80 + Math.random() * 80;
+        const tx = Math.cos(angle) * distance;
+        const ty = Math.sin(angle) * distance;
+
+        particle.style.left = centerX + 'px';
+        particle.style.top = centerY + 'px';
+        particle.style.background = colors[Math.floor(Math.random() * colors.length)];
+        particle.style.width = (6 + Math.random() * 8) + 'px';
+        particle.style.height = particle.style.width;
+        particle.style.setProperty('--tx', tx + 'px');
+        particle.style.setProperty('--ty', ty + 'px');
+
+        boardElement.appendChild(particle);
+
+        // Remove particle after animation
+        setTimeout(() => particle.remove(), 1000);
+    }
+
+    // Add exploding class for cell animation
+    cell.classList.add('exploding');
+    setTimeout(() => cell.classList.remove('exploding'), 800);
 }
 
 // Reset game
@@ -98,8 +142,11 @@ function resetGame() {
 
     cells.forEach(cell => {
         cell.textContent = '';
-        cell.classList.remove('x', 'o', 'disabled', 'winner');
+        cell.classList.remove('x', 'o', 'disabled', 'winner', 'exploding');
     });
+
+    // Remove any remaining particles
+    document.querySelectorAll('.particle').forEach(p => p.remove());
 }
 
 // Start the game
