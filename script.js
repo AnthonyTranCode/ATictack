@@ -24,6 +24,7 @@ let heartbeatInterval = null;
 const cells = document.querySelectorAll('.cell');
 const statusDisplay = document.getElementById('status');
 const resetButton = document.getElementById('resetButton');
+const menuButton = document.getElementById('menuButton');
 const boardElement = document.getElementById('board');
 
 // Winning combinations
@@ -980,6 +981,7 @@ function showGameModeSelection() {
     document.getElementById('multiplayerInfo').style.display = 'none';
     document.getElementById('board').style.display = 'none';
     document.getElementById('resetButton').style.display = 'none';
+    menuButton.style.display = 'none';
 }
 
 // Show online options
@@ -1020,6 +1022,7 @@ function showLocalGameUI() {
     document.getElementById('multiplayerInfo').style.display = 'none';
     document.getElementById('board').style.display = 'grid';
     document.getElementById('resetButton').style.display = 'block';
+    menuButton.style.display = 'none';
     statusDisplay.textContent = `Player ${currentPlayer}'s turn`;
 }
 
@@ -1168,6 +1171,7 @@ function init() {
         cell.addEventListener('click', handleCellClick);
     });
     resetButton.addEventListener('click', resetGame);
+    menuButton.addEventListener('click', returnToMenu);
 
     // Initialize Firebase
     initializeFirebase();
@@ -1264,6 +1268,9 @@ function checkResult() {
 
         // Save result for authenticated users
         saveGameResult({ type: 'win', winner: currentPlayer });
+
+        // Show menu button after game ends
+        menuButton.style.display = 'block';
         return;
     }
 
@@ -1274,6 +1281,9 @@ function checkResult() {
 
         // Save tie result
         saveGameResult({ type: 'tie' });
+
+        // Show menu button after game ends
+        menuButton.style.display = 'block';
         return;
     }
 
@@ -1352,6 +1362,30 @@ function resetGame() {
 
     // Remove any remaining particles
     document.querySelectorAll('.particle').forEach(p => p.remove());
+
+    // Hide menu button when resetting
+    menuButton.style.display = 'none';
+}
+
+// Return to menu
+function returnToMenu() {
+    board = ['', '', '', '', '', '', '', '', ''];
+    currentPlayer = 'X';
+    gameActive = true;
+
+    cells.forEach(cell => {
+        cell.textContent = '';
+        cell.classList.remove('x', 'o', 'disabled', 'winner', 'exploding');
+    });
+
+    // Remove any remaining particles
+    document.querySelectorAll('.particle').forEach(p => p.remove());
+
+    // Hide menu button
+    menuButton.style.display = 'none';
+
+    // Go back to game mode selection
+    showGameModeSelection();
 }
 
 // Start the game
