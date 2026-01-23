@@ -73,7 +73,6 @@ async function loadUserStats(userId) {
             userStats = {
                 winsAsX: 0,
                 winsAsO: 0,
-                losses: 0,
                 ties: 0,
                 createdAt: firebase.firestore.FieldValue.serverTimestamp()
             };
@@ -92,7 +91,6 @@ function updateStatsDisplay() {
     if (userStats) {
         document.getElementById('winsAsX').textContent = userStats.winsAsX || 0;
         document.getElementById('winsAsO').textContent = userStats.winsAsO || 0;
-        document.getElementById('losses').textContent = userStats.losses || 0;
         document.getElementById('ties').textContent = userStats.ties || 0;
     }
 }
@@ -114,8 +112,6 @@ async function saveGameResult(result) {
             } else {
                 updates.winsAsO = (updates.winsAsO || 0) + 1;
             }
-        } else if (result.type === 'loss') {
-            updates.losses = (updates.losses || 0) + 1;
         } else if (result.type === 'tie') {
             updates.ties = (updates.ties || 0) + 1;
         }
