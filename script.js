@@ -3,6 +3,12 @@ let board = ['', '', '', '', '', '', '', '', ''];
 let currentPlayer = 'X';
 let gameActive = true;
 
+// Firebase state
+let currentUser = null;
+let userStats = null;
+let db = null;
+let auth = null;
+
 // Get elements
 const cells = document.querySelectorAll('.cell');
 const statusDisplay = document.getElementById('status');
@@ -21,12 +27,306 @@ const winningCombinations = [
     [2, 4, 6]  // Diagonal top-right to bottom-left
 ];
 
+// Initialize Firebase
+function initializeFirebase() {
+    if (typeof firebase !== 'undefined') {
+        auth = firebase.auth();
+        db = firebase.firestore();
+
+        // Listen for auth state changes
+        auth.onAuthStateChanged(handleAuthStateChange);
+    } else {
+        console.warn('Firebase not loaded. Auth features disabled.');
+    }
+}
+
+// Handle authentication state changes
+async function handleAuthStateChange(user) {
+    currentUser = user;
+
+    if (user) {
+        // User is signed in
+        document.getElementById('signedOutView').style.display = 'none';
+        document.getElementById('signedInView').style.display = 'block';
+        document.getElementById('userEmail').textContent = user.email;
+
+        // Load user stats
+        await loadUserStats(user.uid);
+    } else {
+        // User is signed out
+        document.getElementById('signedOutView').style.display = 'block';
+        document.getElementById('signedInView').style.display = 'none';
+        userStats = null;
+    }
+}
+
+// Load user statistics from Firestore
+async function loadUserStats(userId) {
+    try {
+        const docRef = db.collection('users').doc(userId);
+        const doc = await docRef.get();
+
+        if (doc.exists) {
+            userStats = doc.data();
+        } else {
+            // Create initial stats document
+            userStats = {
+                winsAsX: 0,
+                winsAsO: 0,
+                losses: 0,
+                ties: 0,
+                createdAt: firebase.firestore.FieldValue.serverTimestamp()
+            };
+            await docRef.set(userStats);
+        }
+
+        updateStatsDisplay();
+    } catch (error) {
+        console.error('Error loading stats:', error);
+        showAuthMessage('Failed to load stats', 'error');
+    }
+}
+
+// Update stats display in UI
+function updateStatsDisplay() {
+    if (userStats) {
+        document.getElementById('winsAsX').textContent = userStats.winsAsX || 0;
+        document.getElementById('winsAsO').textContent = userStats.winsAsO || 0;
+        document.getElementById('losses').textContent = userStats.losses || 0;
+        document.getElementById('ties').textContent = userStats.ties || 0;
+    }
+}
+
+// Save game result to Firestore
+async function saveGameResult(result) {
+    if (!currentUser || !userStats) {
+        return; // Not signed in, skip saving
+    }
+
+    try {
+        const updates = { ...userStats };
+
+        if (result.type === 'win') {
+            // Determine if user won as X or O
+            const userSymbol = result.winner;
+            if (userSymbol === 'X') {
+                updates.winsAsX = (updates.winsAsX || 0) + 1;
+            } else {
+                updates.winsAsO = (updates.winsAsO || 0) + 1;
+            }
+        } else if (result.type === 'loss') {
+            updates.losses = (updates.losses || 0) + 1;
+        } else if (result.type === 'tie') {
+            updates.ties = (updates.ties || 0) + 1;
+        }
+
+        updates.lastUpdated = firebase.firestore.FieldValue.serverTimestamp();
+
+        await db.collection('users').doc(currentUser.uid).update(updates);
+        userStats = updates;
+        updateStatsDisplay();
+    } catch (error) {
+        console.error('Error saving game result:', error);
+    }
+}
+
+// Email/Password Sign In
+async function signInWithEmail(email, password) {
+    try {
+        await auth.signInWithEmailAndPassword(email, password);
+        closeAuthModal();
+        showAuthMessage('Signed in successfully!', 'success');
+    } catch (error) {
+        showAuthMessage(getAuthErrorMessage(error.code), 'error');
+    }
+}
+
+// Email/Password Sign Up
+async function signUpWithEmail(email, password) {
+    try {
+        await auth.createUserWithEmailAndPassword(email, password);
+        closeAuthModal();
+        showAuthMessage('Account created successfully!', 'success');
+    } catch (error) {
+        showAuthMessage(getAuthErrorMessage(error.code), 'error');
+    }
+}
+
+// Google Sign In
+async function signInWithGoogle() {
+    try {
+        const provider = new firebase.auth.GoogleAuthProvider();
+        await auth.signInWithPopup(provider);
+        closeAuthModal();
+        showAuthMessage('Signed in with Google!', 'success');
+    } catch (error) {
+        console.error('Google Sign-In Error:', error);
+        console.error('Error Code:', error.code);
+        console.error('Error Message:', error.message);
+        if (error.code !== 'auth/popup-closed-by-user') {
+            showAuthMessage(getAuthErrorMessage(error.code), 'error');
+        }
+    }
+}
+
+// Sign Out
+async function signOut() {
+    try {
+        await auth.signOut();
+        showAuthMessage('Signed out successfully', 'success');
+    } catch (error) {
+        showAuthMessage('Failed to sign out', 'error');
+    }
+}
+
+// Show auth messages
+function showAuthMessage(message, type) {
+    const messageEl = document.getElementById('authMessage');
+    messageEl.textContent = message;
+    messageEl.className = `auth-${type}`;
+    messageEl.style.display = 'block';
+
+    setTimeout(() => {
+        messageEl.style.display = 'none';
+    }, 5000);
+}
+
+// Get user-friendly error messages
+function getAuthErrorMessage(errorCode) {
+    const messages = {
+        'auth/user-not-found': 'No account found with this email',
+        'auth/wrong-password': 'Incorrect password',
+        'auth/email-already-in-use': 'Email already in use',
+        'auth/weak-password': 'Password should be at least 6 characters',
+        'auth/invalid-email': 'Invalid email address',
+        'auth/popup-blocked': 'Popup blocked. Please allow popups for this site.',
+        'auth/popup-closed-by-user': 'Sign in cancelled',
+        'auth/unauthorized-domain': 'This domain is not authorized. Add it in Firebase Console.',
+        'auth/operation-not-allowed': 'Google sign-in not enabled in Firebase Console.',
+        'auth/cancelled-popup-request': 'Sign in cancelled',
+        'auth/network-request-failed': 'Network error. Check your internet connection.'
+    };
+    return messages[errorCode] || `Authentication error: ${errorCode}`;
+}
+
+// Open auth modal
+function openAuthModal() {
+    document.getElementById('authModal').style.display = 'flex';
+}
+
+// Close auth modal
+function closeAuthModal() {
+    document.getElementById('authModal').style.display = 'none';
+    document.getElementById('authMessage').style.display = 'none';
+}
+
+// Switch between signin/signup tabs
+function switchAuthTab(tabName) {
+    const tabs = document.querySelectorAll('.tab-btn');
+    const forms = document.querySelectorAll('.auth-form-container');
+
+    tabs.forEach(tab => {
+        if (tab.getAttribute('data-tab') === tabName) {
+            tab.classList.add('active');
+        } else {
+            tab.classList.remove('active');
+        }
+    });
+
+    document.getElementById('signinTab').style.display = tabName === 'signin' ? 'block' : 'none';
+    document.getElementById('signupTab').style.display = tabName === 'signup' ? 'block' : 'none';
+}
+
+// Setup authentication UI listeners
+function setupAuthListeners() {
+    // Show auth modal button
+    const showModalBtn = document.getElementById('showAuthModalBtn');
+    if (showModalBtn) {
+        showModalBtn.addEventListener('click', openAuthModal);
+    }
+
+    // Modal close button
+    const modalClose = document.getElementById('modalClose');
+    if (modalClose) {
+        modalClose.addEventListener('click', closeAuthModal);
+    }
+
+    // Close modal on outside click
+    const modal = document.getElementById('authModal');
+    if (modal) {
+        modal.addEventListener('click', (e) => {
+            if (e.target === modal) {
+                closeAuthModal();
+            }
+        });
+    }
+
+    // Tab switching
+    document.querySelectorAll('.tab-btn').forEach(btn => {
+        btn.addEventListener('click', (e) => {
+            switchAuthTab(e.target.getAttribute('data-tab'));
+        });
+    });
+
+    // Sign in form
+    const signinForm = document.getElementById('signinForm');
+    if (signinForm) {
+        signinForm.addEventListener('submit', async (e) => {
+            e.preventDefault();
+            const email = document.getElementById('signinEmail').value;
+            const password = document.getElementById('signinPassword').value;
+            await signInWithEmail(email, password);
+        });
+    }
+
+    // Sign up form
+    const signupForm = document.getElementById('signupForm');
+    if (signupForm) {
+        signupForm.addEventListener('submit', async (e) => {
+            e.preventDefault();
+            const email = document.getElementById('signupEmail').value;
+            const password = document.getElementById('signupPassword').value;
+            const confirmPassword = document.getElementById('signupConfirmPassword').value;
+
+            if (password !== confirmPassword) {
+                showAuthMessage('Passwords do not match', 'error');
+                return;
+            }
+
+            await signUpWithEmail(email, password);
+        });
+    }
+
+    // Google sign in buttons
+    const googleSignInBtn = document.getElementById('googleSignInBtn');
+    const googleSignUpBtn = document.getElementById('googleSignUpBtn');
+
+    if (googleSignInBtn) {
+        googleSignInBtn.addEventListener('click', signInWithGoogle);
+    }
+    if (googleSignUpBtn) {
+        googleSignUpBtn.addEventListener('click', signInWithGoogle);
+    }
+
+    // Sign out button
+    const signOutBtn = document.getElementById('signOutBtn');
+    if (signOutBtn) {
+        signOutBtn.addEventListener('click', signOut);
+    }
+}
+
 // Initialize game
 function init() {
     cells.forEach(cell => {
         cell.addEventListener('click', handleCellClick);
     });
     resetButton.addEventListener('click', resetGame);
+
+    // Initialize Firebase
+    initializeFirebase();
+
+    // Auth UI event listeners
+    setupAuthListeners();
 }
 
 // Handle cell click
@@ -68,6 +368,9 @@ function checkResult() {
         statusDisplay.textContent = `Player ${currentPlayer} wins!`;
         gameActive = false;
         highlightWinningCells(winningCombo);
+
+        // Save result for authenticated users
+        saveGameResult({ type: 'win', winner: currentPlayer });
         return;
     }
 
@@ -75,6 +378,9 @@ function checkResult() {
     if (!board.includes('')) {
         statusDisplay.textContent = "It's a tie!";
         gameActive = false;
+
+        // Save tie result
+        saveGameResult({ type: 'tie' });
         return;
     }
 
