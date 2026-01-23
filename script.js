@@ -693,6 +693,9 @@ function cleanupGame() {
         cell.classList.remove('x', 'o', 'disabled', 'winner');
     });
 
+    // Hide post-game options
+    document.getElementById('postGameOptions').style.display = 'none';
+
     statusDisplay.textContent = `Player ${currentPlayer}'s turn`;
 }
 
@@ -787,6 +790,13 @@ function handleGameUpdate(gameData) {
     // Handle game completion
     if (gameData.status === 'completed') {
         handleGameCompleted(gameData);
+    } else if (gameData.status === 'active') {
+        // Game is active (could be a rematch that just started)
+        // Hide post-game options if they're showing
+        if (document.getElementById('postGameOptions').style.display === 'block') {
+            document.getElementById('postGameOptions').style.display = 'none';
+            document.getElementById('leaveGameBtn').style.display = 'block';
+        }
     }
 
     // Check for opponent disconnect
@@ -828,6 +838,134 @@ function handleGameCompleted(gameData) {
         if (gameData.winningCombo) {
             highlightWinningCells(gameData.winningCombo);
         }
+    }
+
+    // Show post-game options for online multiplayer
+    showPostGameOptions(gameData);
+}
+
+// Show post-game options
+function showPostGameOptions(gameData) {
+    document.getElementById('postGameOptions').style.display = 'block';
+    document.getElementById('leaveGameBtn').style.display = 'none';
+
+    // Check rematch status
+    const hostWantsRematch = gameData.hostWantsRematch || false;
+    const guestWantsRematch = gameData.guestWantsRematch || false;
+
+    const myRematch = playerRole === 'host' ? hostWantsRematch : guestWantsRematch;
+    const opponentRematch = playerRole === 'host' ? guestWantsRematch : hostWantsRematch;
+
+    const waitingMsg = document.getElementById('waitingForOpponentMsg');
+    const postGameMsg = document.getElementById('postGameMessage');
+
+    if (myRematch && opponentRematch) {
+        // Both want rematch - start new game
+        postGameMsg.textContent = 'Starting new game...';
+        setTimeout(() => startRematch(), 1000);
+    } else if (myRematch) {
+        // I want rematch, waiting for opponent
+        waitingMsg.style.display = 'block';
+        postGameMsg.textContent = 'You want to play again!';
+    } else if (opponentRematch) {
+        // Opponent wants rematch
+        postGameMsg.textContent = `${opponentDisplayName} wants to play again!`;
+        waitingMsg.style.display = 'none';
+    } else {
+        // No one has decided yet
+        postGameMsg.textContent = 'What would you like to do?';
+        waitingMsg.style.display = 'none';
+    }
+}
+
+// Request rematch
+async function requestRematch() {
+    if (!currentGameId) return;
+
+    try {
+        const field = playerRole === 'host' ? 'hostWantsRematch' : 'guestWantsRematch';
+        await db.collection('games').doc(currentGameId).update({
+            [field]: true,
+            updatedAt: firebase.firestore.FieldValue.serverTimestamp()
+        });
+
+        document.getElementById('waitingForOpponentMsg').style.display = 'block';
+        document.getElementById('postGameMessage').textContent = 'You want to play again!';
+    } catch (error) {
+        console.error('Error requesting rematch:', error);
+        showErrorMessage('Failed to request rematch');
+    }
+}
+
+// Start rematch
+async function startRematch() {
+    if (!currentGameId) return;
+
+    try {
+        // Reset the game board and state
+        await db.collection('games').doc(currentGameId).update({
+            board: ['', '', '', '', '', '', '', '', ''],
+            currentTurn: 'host',
+            status: 'active',
+            winner: null,
+            winningCombo: null,
+            hostWantsRematch: false,
+            guestWantsRematch: false,
+            updatedAt: firebase.firestore.FieldValue.serverTimestamp(),
+            lastActivityAt: firebase.firestore.FieldValue.serverTimestamp()
+        });
+
+        // Reset local state
+        board = ['', '', '', '', '', '', '', '', ''];
+        gameActive = true;
+        isMyTurn = playerRole === 'host';
+
+        // Clear UI
+        cells.forEach(cell => {
+            cell.textContent = '';
+            cell.classList.remove('x', 'o', 'disabled', 'winner', 'exploding');
+        });
+
+        // Remove particles
+        document.querySelectorAll('.particle').forEach(p => p.remove());
+
+        // Hide post-game options
+        document.getElementById('postGameOptions').style.display = 'none';
+        document.getElementById('leaveGameBtn').style.display = 'block';
+
+        // Update status
+        if (isMyTurn) {
+            statusDisplay.textContent = "Your turn";
+            statusDisplay.className = 'my-turn';
+        } else {
+            statusDisplay.textContent = `${opponentDisplayName}'s turn`;
+            statusDisplay.className = 'their-turn';
+        }
+    } catch (error) {
+        console.error('Error starting rematch:', error);
+        showErrorMessage('Failed to start rematch');
+    }
+}
+
+// Return to menu from online game
+async function returnToMenuFromOnline() {
+    if (!currentGameId) return;
+
+    try {
+        // Mark that player is leaving
+        const field = playerRole === 'host' ? 'hostWantsRematch' : 'guestWantsRematch';
+        await db.collection('games').doc(currentGameId).update({
+            [field]: false,
+            status: 'abandoned',
+            updatedAt: firebase.firestore.FieldValue.serverTimestamp()
+        });
+
+        cleanupGame();
+        showGameModeSelection();
+    } catch (error) {
+        console.error('Error returning to menu:', error);
+        cleanupGame();
+        showGameModeSelection();
     }
 }
 
@@ -1162,6 +1300,17 @@ function setupMultiplayerListeners() {
     const backToOnlineBtn = document.getElementById('backToOnlineBtn');
     if (backToOnlineBtn) {
         backToOnlineBtn.addEventListener('click', showOnlineOptions);
+    }
+
+    // Post-game buttons
+    const playAgainBtn = document.getElementById('playAgainBtn');
+    if (playAgainBtn) {
+        playAgainBtn.addEventListener('click', requestRematch);
+    }
+
+    const returnToMenuBtn = document.getElementById('returnToMenuBtn');
+    if (returnToMenuBtn) {
+        returnToMenuBtn.addEventListener('click', returnToMenuFromOnline);
     }
 }
 

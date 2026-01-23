@@ -796,6 +796,50 @@ h1 {
     flex: 1;
 }
 
+/* Post-Game Options */
+.post-game-panel {
+    margin: 20px 0;
+    padding: 20px;
+    background: #f8f9fa;
+    border-radius: 10px;
+    border: 2px solid #4CAF50;
+    text-align: center;
+}
+
+.post-game-panel h3 {
+    margin-bottom: 10px;
+    color: #333;
+    font-size: 1.5em;
+}
+
+.post-game-panel p {
+    margin: 10px 0;
+    color: #666;
+}
+
+.post-game-buttons {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    margin: 15px 0;
+}
+
+.post-game-buttons .online-btn {
+    background: linear-gradient(135deg, #4CAF50 0%, #45a049 100%);
+    box-shadow: 0 4px 15px rgba(76, 175, 80, 0.4);
+}
+
+.post-game-buttons .online-btn:hover {
+    box-shadow: 0 6px 20px rgba(76, 175, 80, 0.6);
+}
+
+.waiting-message {
+    font-style: italic;
+    color: #999;
+    font-size: 0.9em;
+    margin-top: 10px;
+}
+
 /* Mobile Responsive */
 @media (max-width: 500px) {
     .mode-buttons {
