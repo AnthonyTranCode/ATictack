@@ -58,6 +58,69 @@
             <div class="cell" data-index="8"></div>
         </div>
         <button id="resetButton">New Game</button>
+
+        <!-- Game Mode Selection -->
+        <div id="gameModeSelection" class="game-mode-panel" style="display: none;">
+            <h3>Select Game Mode</h3>
+            <div class="mode-buttons">
+                <button id="localGameBtn" class="mode-btn">
+                    <span class="mode-icon">🎮</span>
+                    <span class="mode-title">Local Game</span>
+                    <span class="mode-desc">Play on the same device</span>
+                </button>
+                <button id="onlineGameBtn" class="mode-btn">
+                    <span class="mode-icon">🌐</span>
+                    <span class="mode-title">Online Multiplayer</span>
+                    <span class="mode-desc">Play with a friend remotely</span>
+                </button>
+            </div>
+        </div>
+
+        <!-- Online Game Options -->
+        <div id="onlineGameOptions" class="online-panel" style="display: none;">
+            <h3>Online Multiplayer</h3>
+            <div class="online-buttons">
+                <button id="createGameBtn" class="online-btn">Create Game</button>
+                <button id="joinGameBtn" class="online-btn">Join Game</button>
+                <button id="backToModesBtn" class="back-btn">← Back</button>
+            </div>
+        </div>
+
+        <!-- Create Game UI -->
+        <div id="createGameUI" class="online-panel" style="display: none;">
+            <h3>Waiting for Opponent...</h3>
+            <div class="room-code-display">
+                <p>Share this code with your friend:</p>
+                <div class="room-code" id="roomCodeDisplay">------</div>
+                <button id="copyCodeBtn" class="copy-btn">📋 Copy Code</button>
+            </div>
+            <p class="waiting-message">Your opponent will join using this code</p>
+            <button id="cancelGameBtn" class="cancel-btn">Cancel Game</button>
+        </div>
+
+        <!-- Join Game UI -->
+        <div id="joinGameUI" class="online-panel" style="display: none;">
+            <h3>Join Game</h3>
+            <div class="join-form">
+                <input type="text" id="roomCodeInput" placeholder="Enter 6-character code" maxlength="6">
+                <button id="submitJoinBtn" class="online-btn">Join Game</button>
+            </div>
+            <button id="backToOnlineBtn" class="back-btn">← Back</button>
+        </div>
+
+        <!-- Active Game Info -->
+        <div id="multiplayerInfo" class="multiplayer-info" style="display: none;">
+            <div class="player-info">
+                <span class="you-label">You (<span id="yourSymbol">X</span>)</span>
+                <span class="vs-label">vs</span>
+                <span class="opponent-label" id="opponentName">Waiting...</span>
+            </div>
+            <div class="connection-status" id="connectionStatus">
+                <span class="status-dot"></span>
+                <span class="status-text">Connected</span>
+            </div>
+            <button id="leaveGameBtn" class="leave-btn">Leave Game</button>
+        </div>
     </div>
 
     <!-- Auth Modal -->
@@ -104,6 +167,24 @@
             <!-- Error/Success Messages -->
             <div class="auth-message-container">
                 <p id="authMessage" class="auth-error" style="display: none;"></p>
+            </div>
+        </div>
+    </div>
+
+    <!-- Stats Migration Modal -->
+    <div class="modal" id="migrationModal" style="display: none;">
+        <div class="modal-content">
+            <h2>Claim Your Stats?</h2>
+            <p>We found game statistics from when you played anonymously.</p>
+            <div class="migration-stats">
+                <p><strong>Wins as X:</strong> <span id="migrationWinsX">0</span></p>
+                <p><strong>Wins as O:</strong> <span id="migrationWinsO">0</span></p>
+                <p><strong>Ties:</strong> <span id="migrationTies">0</span></p>
+            </div>
+            <p>Would you like to add these to your account?</p>
+            <div class="migration-buttons">
+                <button id="claimStatsBtn" class="btn-primary">Claim Stats</button>
+                <button id="skipStatsBtn" class="btn-link">Skip</button>
             </div>
         </div>
     </div>

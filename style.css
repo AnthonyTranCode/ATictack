@@ -521,3 +521,283 @@ h1 {
         padding: 10px;
     }
 }
+
+/* ===================================
+   Multiplayer UI Styles
+   =================================== */
+
+/* Game Mode Selection */
+.game-mode-panel {
+    margin: 20px 0;
+    padding: 20px;
+    background: #f8f9fa;
+    border-radius: 10px;
+}
+
+.game-mode-panel h3 {
+    margin-bottom: 15px;
+    color: #333;
+}
+
+.mode-buttons {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 15px;
+}
+
+.mode-btn {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    padding: 20px;
+    background: white;
+    border: 2px solid #e0e0e0;
+    border-radius: 10px;
+    cursor: pointer;
+    transition: all 0.3s ease;
+}
+
+.mode-btn:hover {
+    border-color: #667eea;
+    transform: translateY(-2px);
+    box-shadow: 0 4px 12px rgba(102, 126, 234, 0.2);
+}
+
+.mode-icon {
+    font-size: 2.5em;
+    margin-bottom: 10px;
+}
+
+.mode-title {
+    font-weight: 600;
+    font-size: 1.1em;
+    color: #333;
+    margin-bottom: 5px;
+}
+
+.mode-desc {
+    font-size: 0.85em;
+    color: #666;
+}
+
+/* Online Panels */
+.online-panel {
+    margin: 20px 0;
+    padding: 20px;
+    background: #f8f9fa;
+    border-radius: 10px;
+}
+
+.online-panel h3 {
+    margin-bottom: 15px;
+    color: #333;
+}
+
+.online-buttons, .join-form {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+}
+
+.online-btn {
+    padding: 12px 24px;
+    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    color: white;
+    border: none;
+    border-radius: 8px;
+    font-size: 1em;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.2s ease;
+}
+
+.online-btn:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 4px 12px rgba(102, 126, 234, 0.4);
+}
+
+/* Room Code Display */
+.room-code-display {
+    text-align: center;
+    margin: 20px 0;
+}
+
+.room-code {
+    font-size: 2.5em;
+    font-weight: bold;
+    color: #667eea;
+    letter-spacing: 0.1em;
+    padding: 15px;
+    background: white;
+    border: 3px dashed #667eea;
+    border-radius: 10px;
+    margin: 15px 0;
+}
+
+.copy-btn {
+    padding: 8px 16px;
+    background: white;
+    border: 2px solid #667eea;
+    color: #667eea;
+    border-radius: 6px;
+    cursor: pointer;
+    font-size: 0.9em;
+    font-weight: 600;
+    transition: all 0.2s ease;
+}
+
+.copy-btn:hover {
+    background: #667eea;
+    color: white;
+}
+
+.waiting-message {
+    color: #666;
+    font-size: 0.95em;
+    margin: 10px 0;
+}
+
+/* Join Form */
+.join-form input {
+    padding: 12px;
+    font-size: 1.2em;
+    text-align: center;
+    text-transform: uppercase;
+    letter-spacing: 0.2em;
+    border: 2px solid #e0e0e0;
+    border-radius: 8px;
+}
+
+.join-form input:focus {
+    outline: none;
+    border-color: #667eea;
+}
+
+/* Multiplayer Info */
+.multiplayer-info {
+    margin: 20px 0;
+    padding: 15px;
+    background: #f8f9fa;
+    border-radius: 10px;
+    border: 2px solid #e0e0e0;
+}
+
+.player-info {
+    display: flex;
+    justify-content: space-around;
+    align-items: center;
+    margin-bottom: 10px;
+    padding-bottom: 10px;
+    border-bottom: 1px solid #ddd;
+}
+
+.you-label {
+    font-weight: 600;
+    color: #667eea;
+}
+
+.vs-label {
+    color: #999;
+    font-size: 0.9em;
+}
+
+.opponent-label {
+    font-weight: 600;
+    color: #764ba2;
+}
+
+.connection-status {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin: 10px 0;
+    font-size: 0.9em;
+    justify-content: center;
+}
+
+.status-dot {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    background: #4CAF50;
+    animation: pulse 2s infinite;
+}
+
+@keyframes pulse {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.5; }
+}
+
+.status-dot.disconnected {
+    background: #f44336;
+}
+
+.leave-btn, .cancel-btn, .back-btn {
+    padding: 8px 16px;
+    background: #f44336;
+    color: white;
+    border: none;
+    border-radius: 6px;
+    cursor: pointer;
+    font-size: 0.9em;
+    font-weight: 600;
+    transition: all 0.2s ease;
+}
+
+.back-btn {
+    background: #999;
+}
+
+.leave-btn:hover, .cancel-btn:hover, .back-btn:hover {
+    opacity: 0.8;
+    transform: translateY(-1px);
+}
+
+/* Turn Indicator */
+#status.my-turn {
+    color: #4CAF50;
+    font-weight: bold;
+}
+
+#status.their-turn {
+    color: #f44336;
+}
+
+/* Migration Modal */
+.migration-stats {
+    margin: 15px 0;
+    padding: 15px;
+    background: #f8f9fa;
+    border-radius: 8px;
+}
+
+.migration-stats p {
+    margin: 8px 0;
+    color: #333;
+}
+
+.migration-buttons {
+    display: flex;
+    gap: 10px;
+    margin-top: 15px;
+}
+
+.migration-buttons button {
+    flex: 1;
+}
+
+/* Mobile Responsive */
+@media (max-width: 500px) {
+    .mode-buttons {
+        grid-template-columns: 1fr;
+    }
+
+    .room-code {
+        font-size: 1.8em;
+    }
+
+    .player-info {
+        flex-direction: column;
+        gap: 8px;
+    }
+}

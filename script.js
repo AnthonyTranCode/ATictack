@@ -9,6 +9,17 @@ let userStats = null;
 let db = null;
 let auth = null;
 
+// Multiplayer state
+let gameMode = 'local';  // 'local' | 'online'
+let currentGameId = null;
+let playerRole = null;  // 'host' | 'guest'
+let playerSymbol = null;  // 'X' | 'O'
+let opponentSymbol = null;
+let gameListener = null;
+let isMyTurn = false;
+let opponentDisplayName = '';
+let heartbeatInterval = null;
+
 // Get elements
 const cells = document.querySelectorAll('.cell');
 const statusDisplay = document.getElementById('status');
@@ -52,11 +63,17 @@ async function handleAuthStateChange(user) {
 
         // Load user stats
         await loadUserStats(user.uid);
+
+        // Check for anonymous stats migration
+        checkAndOfferStatsMigration();
     } else {
         // User is signed out
         document.getElementById('signedOutView').style.display = 'block';
         document.getElementById('signedInView').style.display = 'none';
         userStats = null;
+
+        // Show anonymous stats if available
+        updateAnonymousStatsDisplay();
     }
 }
 
@@ -98,7 +115,9 @@ function updateStatsDisplay() {
 // Save game result to Firestore
 async function saveGameResult(result) {
     if (!currentUser || !userStats) {
-        return; // Not signed in, skip saving
+        // Not signed in, save to localStorage instead
+        saveAnonymousStatsToLocal(result);
+        return;
     }
 
     try {
@@ -123,6 +142,120 @@ async function saveGameResult(result) {
         updateStatsDisplay();
     } catch (error) {
         console.error('Error saving game result:', error);
+    }
+}
+
+// ===== ANONYMOUS STATS SYSTEM =====
+
+// Initialize anonymous stats
+function initAnonymousStats() {
+    const stats = getAnonymousStats();
+    if (!stats) {
+        const newStats = {
+            winsAsX: 0,
+            winsAsO: 0,
+            ties: 0,
+            gamesPlayed: 0,
+            createdAt: Date.now()
+        };
+        localStorage.setItem('atictack_anonymous_stats', JSON.stringify(newStats));
+    }
+}
+
+// Get anonymous stats from localStorage
+function getAnonymousStats() {
+    const data = localStorage.getItem('atictack_anonymous_stats');
+    return data ? JSON.parse(data) : null;
+}
+
+// Save anonymous stats to localStorage
+function saveAnonymousStatsToLocal(result) {
+    const stats = getAnonymousStats() || {
+        winsAsX: 0,
+        winsAsO: 0,
+        ties: 0,
+        gamesPlayed: 0,
+        createdAt: Date.now()
+    };
+
+    if (result.type === 'win') {
+        if (result.winner === 'X') {
+            stats.winsAsX++;
+        } else {
+            stats.winsAsO++;
+        }
+    } else if (result.type === 'tie') {
+        stats.ties++;
+    }
+
+    stats.gamesPlayed++;
+    localStorage.setItem('atictack_anonymous_stats', JSON.stringify(stats));
+    updateAnonymousStatsDisplay();
+}
+
+// Update anonymous stats display
+function updateAnonymousStatsDisplay() {
+    if (!currentUser) {
+        const stats = getAnonymousStats();
+        if (stats) {
+            document.getElementById('winsAsX').textContent = stats.winsAsX || 0;
+            document.getElementById('winsAsO').textContent = stats.winsAsO || 0;
+            document.getElementById('ties').textContent = stats.ties || 0;
+        }
+    }
+}
+
+// Check and offer stats migration
+function checkAndOfferStatsMigration() {
+    const anonymousStats = getAnonymousStats();
+
+    if (!anonymousStats || anonymousStats.gamesPlayed === 0) {
+        return;
+    }
+
+    // Show migration modal
+    document.getElementById('migrationWinsX').textContent = anonymousStats.winsAsX;
+    document.getElementById('migrationWinsO').textContent = anonymousStats.winsAsO;
+    document.getElementById('migrationTies').textContent = anonymousStats.ties;
+    document.getElementById('migrationModal').style.display = 'flex';
+}
+
+// Migrate anonymous stats to Firebase
+async function migrateAnonymousStatsToFirebase() {
+    const anonymousStats = getAnonymousStats();
+
+    if (!currentUser || !anonymousStats) return;
+
+    try {
+        const userRef = db.collection('users').doc(currentUser.uid);
+        const userDoc = await userRef.get();
+
+        const currentStats = userDoc.exists ? userDoc.data() : {
+            winsAsX: 0,
+            winsAsO: 0,
+            ties: 0
+        };
+
+        await userRef.update({
+            winsAsX: currentStats.winsAsX + anonymousStats.winsAsX,
+            winsAsO: currentStats.winsAsO + anonymousStats.winsAsO,
+            ties: currentStats.ties + anonymousStats.ties,
+            lastUpdated: firebase.firestore.FieldValue.serverTimestamp()
+        });
+
+        // Clear anonymous stats
+        localStorage.removeItem('atictack_anonymous_stats');
+
+        // Reload user stats
+        await loadUserStats(currentUser.uid);
+
+        // Close modal
+        document.getElementById('migrationModal').style.display = 'none';
+        showAuthMessage('Stats successfully claimed!', 'success');
+
+    } catch (error) {
+        console.error('Migration error:', error);
+        showAuthMessage('Failed to claim stats', 'error');
     }
 }
 
@@ -309,6 +442,724 @@ function setupAuthListeners() {
     if (signOutBtn) {
         signOutBtn.addEventListener('click', signOut);
     }
+
+    // Stats migration buttons
+    const claimStatsBtn = document.getElementById('claimStatsBtn');
+    const skipStatsBtn = document.getElementById('skipStatsBtn');
+    if (claimStatsBtn) {
+        claimStatsBtn.addEventListener('click', migrateAnonymousStatsToFirebase);
+    }
+    if (skipStatsBtn) {
+        skipStatsBtn.addEventListener('click', () => {
+            document.getElementById('migrationModal').style.display = 'none';
+            localStorage.removeItem('atictack_anonymous_stats');
+        });
+    }
+}
+
+// ===== ROOM CODE SYSTEM =====
+
+// Generate unique 6-character room code
+function generateRoomCode() {
+    const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';  // Exclude ambiguous chars like 0, O, 1, I
+    let code = '';
+    for (let i = 0; i < 6; i++) {
+        code += chars.charAt(Math.floor(Math.random() * chars.length));
+    }
+    return code;
+}
+
+// Validate room code and check game availability
+async function validateRoomCode(code) {
+    if (!/^[A-Z0-9]{6}$/.test(code)) {
+        return { valid: false, error: 'Invalid code format' };
+    }
+
+    try {
+        const gameDoc = await db.collection('games').doc(code).get();
+        if (!gameDoc.exists) {
+            return { valid: false, error: 'Game not found' };
+        }
+
+        const game = gameDoc.data();
+        if (game.status === 'completed' || game.status === 'abandoned') {
+            return { valid: false, error: 'Game already ended' };
+        }
+
+        if (game.status === 'active' && game.guestId) {
+            return { valid: false, error: 'Game is full' };
+        }
+
+        return { valid: true, game };
+    } catch (error) {
+        console.error('Error validating room code:', error);
+        return { valid: false, error: 'Failed to validate code' };
+    }
+}
+
+// ===== FIRESTORE GAME MANAGEMENT =====
+
+// Create multiplayer game
+async function createMultiplayerGame() {
+    try {
+        // Generate unique room code
+        let roomCode;
+        let attempts = 0;
+        do {
+            roomCode = generateRoomCode();
+            const exists = await db.collection('games').doc(roomCode).get();
+            if (!exists.exists) break;
+            attempts++;
+        } while (attempts < 5);
+
+        if (attempts >= 5) throw new Error('Failed to generate unique code');
+
+        // Determine player identity
+        const userId = currentUser ? currentUser.uid : null;
+        const displayName = currentUser
+            ? (currentUser.email.split('@')[0] || 'Player 1')
+            : 'Anonymous Player';
+
+        // Host always plays as X
+        const gameData = {
+            gameId: roomCode,
+            hostId: userId,
+            hostDisplayName: displayName,
+            guestId: null,
+            guestDisplayName: null,
+            status: 'waiting',
+            board: ['', '', '', '', '', '', '', '', ''],
+            currentTurn: 'host',
+            hostSymbol: 'X',
+            guestSymbol: 'O',
+            winner: null,
+            winningCombo: null,
+            createdAt: firebase.firestore.FieldValue.serverTimestamp(),
+            updatedAt: firebase.firestore.FieldValue.serverTimestamp(),
+            lastActivityAt: firebase.firestore.FieldValue.serverTimestamp(),
+            hostLastSeen: firebase.firestore.FieldValue.serverTimestamp(),
+            guestLastSeen: null
+        };
+
+        await db.collection('games').doc(roomCode).set(gameData);
+
+        // Update local state
+        gameMode = 'online';
+        currentGameId = roomCode;
+        playerRole = 'host';
+        playerSymbol = 'X';
+        opponentSymbol = 'O';
+        isMyTurn = true;
+
+        // Update user's active game
+        if (currentUser) {
+            await db.collection('users').doc(currentUser.uid).update({
+                currentGameId: roomCode,
+                lastGameAt: firebase.firestore.FieldValue.serverTimestamp()
+            });
+        }
+
+        // Setup listener
+        setupGameListener(roomCode);
+
+        // Show waiting UI
+        showCreateGameUI(roomCode);
+
+    } catch (error) {
+        console.error('Error creating game:', error);
+        showErrorMessage('Failed to create game. Please try again.');
+    }
+}
+
+// Join multiplayer game
+async function joinMultiplayerGame(roomCode) {
+    try {
+        // Validate room code
+        const validation = await validateRoomCode(roomCode);
+        if (!validation.valid) {
+            showErrorMessage(validation.error);
+            return;
+        }
+
+        // Determine player identity
+        const userId = currentUser ? currentUser.uid : null;
+        const displayName = currentUser
+            ? (currentUser.email.split('@')[0] || 'Player 2')
+            : 'Anonymous Player';
+
+        // Join game
+        await db.collection('games').doc(roomCode).update({
+            guestId: userId,
+            guestDisplayName: displayName,
+            status: 'active',
+            guestLastSeen: firebase.firestore.FieldValue.serverTimestamp(),
+            updatedAt: firebase.firestore.FieldValue.serverTimestamp(),
+            lastActivityAt: firebase.firestore.FieldValue.serverTimestamp()
+        });
+
+        // Update local state
+        gameMode = 'online';
+        currentGameId = roomCode;
+        playerRole = 'guest';
+        playerSymbol = 'O';
+        opponentSymbol = 'X';
+        isMyTurn = false;
+        opponentDisplayName = validation.game.hostDisplayName;
+
+        // Update user's active game
+        if (currentUser) {
+            await db.collection('users').doc(currentUser.uid).update({
+                currentGameId: roomCode,
+                lastGameAt: firebase.firestore.FieldValue.serverTimestamp()
+            });
+        }
+
+        // Setup listener
+        setupGameListener(roomCode);
+
+        // Show game UI
+        showActiveGameUI();
+
+    } catch (error) {
+        console.error('Error joining game:', error);
+        showErrorMessage('Failed to join game. Please try again.');
+    }
+}
+
+// Leave game
+async function leaveGame() {
+    if (!currentGameId) return;
+
+    try {
+        const gameRef = db.collection('games').doc(currentGameId);
+        const gameDoc = await gameRef.get();
+
+        if (gameDoc.exists) {
+            const gameData = gameDoc.data();
+
+            // If game not started yet, delete it
+            if (gameData.status === 'waiting') {
+                await gameRef.delete();
+            } else {
+                // Mark as abandoned and declare opponent winner
+                await gameRef.update({
+                    status: 'abandoned',
+                    winner: playerRole === 'host' ? 'guest' : 'host',
+                    updatedAt: firebase.firestore.FieldValue.serverTimestamp()
+                });
+            }
+        }
+
+        cleanupGame();
+        showGameModeSelection();
+
+    } catch (error) {
+        console.error('Error leaving game:', error);
+    }
+}
+
+// Cleanup game state
+function cleanupGame() {
+    // Cleanup listener
+    if (gameListener) {
+        gameListener();
+        gameListener = null;
+    }
+
+    // Cleanup heartbeat
+    if (heartbeatInterval) {
+        clearInterval(heartbeatInterval);
+        heartbeatInterval = null;
+    }
+
+    // Reset state
+    gameMode = 'local';
+    currentGameId = null;
+    playerRole = null;
+    playerSymbol = null;
+    opponentSymbol = null;
+    isMyTurn = false;
+    opponentDisplayName = '';
+
+    // Reset board
+    board = ['', '', '', '', '', '', '', '', ''];
+    currentPlayer = 'X';
+    gameActive = true;
+
+    // Clear UI
+    cells.forEach(cell => {
+        cell.textContent = '';
+        cell.classList.remove('x', 'o', 'disabled', 'winner');
+    });
+
+    statusDisplay.textContent = `Player ${currentPlayer}'s turn`;
+}
+
+// Cleanup old games (run periodically)
+async function cleanupOldGames() {
+    try {
+        const oneHourAgo = new Date(Date.now() - 60 * 60 * 1000);
+        const snapshot = await db.collection('games')
+            .where('lastActivityAt', '<', oneHourAgo)
+            .where('status', 'in', ['waiting', 'active'])
+            .limit(10)
+            .get();
+
+        const batch = db.batch();
+        snapshot.forEach(doc => {
+            batch.delete(doc.ref);
+        });
+
+        await batch.commit();
+    } catch (error) {
+        console.error('Error cleaning up old games:', error);
+    }
+}
+
+// ===== REAL-TIME SYNCHRONIZATION =====
+
+// Setup game listener
+function setupGameListener(gameId) {
+    // Cleanup existing listener
+    if (gameListener) {
+        gameListener();
+        gameListener = null;
+    }
+
+    // Setup new listener
+    gameListener = db.collection('games').doc(gameId)
+        .onSnapshot((doc) => {
+            if (!doc.exists) {
+                handleGameDeleted();
+                return;
+            }
+
+            handleGameUpdate(doc.data());
+        }, (error) => {
+            console.error('Game listener error:', error);
+            showErrorMessage('Connection lost. Please refresh the page.');
+        });
+
+    // Start heartbeat
+    startHeartbeat(gameId);
+}
+
+// Start heartbeat to track connection
+function startHeartbeat(gameId) {
+    if (heartbeatInterval) {
+        clearInterval(heartbeatInterval);
+    }
+
+    heartbeatInterval = setInterval(() => {
+        if (gameMode !== 'online' || currentGameId !== gameId) {
+            clearInterval(heartbeatInterval);
+            heartbeatInterval = null;
+            return;
+        }
+
+        const field = playerRole === 'host' ? 'hostLastSeen' : 'guestLastSeen';
+        db.collection('games').doc(gameId).update({
+            [field]: firebase.firestore.FieldValue.serverTimestamp(),
+            lastActivityAt: firebase.firestore.FieldValue.serverTimestamp()
+        }).catch(err => console.error('Heartbeat failed:', err));
+    }, 10000);  // Every 10 seconds
+}
+
+// Handle game updates
+function handleGameUpdate(gameData) {
+    // Update opponent info
+    if (playerRole === 'host') {
+        if (gameData.guestId && !opponentDisplayName) {
+            opponentDisplayName = gameData.guestDisplayName;
+            showGameStartNotification();
+        }
+    } else {
+        opponentDisplayName = gameData.hostDisplayName;
+    }
+
+    // Update turn
+    isMyTurn = gameData.currentTurn === playerRole;
+
+    // Sync board state
+    updateLocalGameState(gameData);
+
+    // Handle game completion
+    if (gameData.status === 'completed') {
+        handleGameCompleted(gameData);
+    }
+
+    // Check for opponent disconnect
+    checkOpponentConnection(gameData);
+
+    // Update UI
+    updateMultiplayerUI(gameData);
+}
+
+// Update local game state from Firestore
+function updateLocalGameState(gameData) {
+    board = [...gameData.board];
+
+    // Update cell display
+    cells.forEach((cell, index) => {
+        const value = board[index];
+        cell.textContent = value;
+        if (value) {
+            cell.classList.add(value.toLowerCase());
+            cell.classList.add('disabled');
+        }
+    });
+
+    // Update game active state
+    gameActive = gameData.status === 'active' || gameData.status === 'waiting';
+}
+
+// Handle game completion
+function handleGameCompleted(gameData) {
+    gameActive = false;
+
+    if (gameData.winner === 'tie') {
+        statusDisplay.textContent = "It's a tie!";
+    } else {
+        const winnerName = gameData.winner === playerRole ? 'You' : opponentDisplayName;
+        statusDisplay.textContent = `${winnerName} win!`;
+
+        // Highlight winning cells
+        if (gameData.winningCombo) {
+            highlightWinningCells(gameData.winningCombo);
+        }
+    }
+}
+
+// Handle game deleted
+function handleGameDeleted() {
+    showErrorMessage('Game has been deleted');
+    cleanupGame();
+    showGameModeSelection();
+}
+
+// Show game start notification
+function showGameStartNotification() {
+    statusDisplay.textContent = `${opponentDisplayName} joined! Game starting...`;
+    setTimeout(() => {
+        showActiveGameUI();
+    }, 1000);
+}
+
+// Make move in online game
+async function makeMove(index) {
+    const gameRef = db.collection('games').doc(currentGameId);
+
+    // Get current game state
+    const gameDoc = await gameRef.get();
+    if (!gameDoc.exists) throw new Error('Game not found');
+
+    const gameData = gameDoc.data();
+
+    // Validate it's still our turn (prevent race conditions)
+    if (gameData.currentTurn !== playerRole) {
+        throw new Error('Not your turn');
+    }
+
+    // Validate cell is empty
+    if (gameData.board[index] !== '') {
+        throw new Error('Cell already occupied');
+    }
+
+    // Update board
+    const newBoard = [...gameData.board];
+    newBoard[index] = playerSymbol;
+
+    // Check for winner
+    const result = checkWinner(newBoard);
+
+    const updates = {
+        board: newBoard,
+        currentTurn: playerRole === 'host' ? 'guest' : 'host',
+        updatedAt: firebase.firestore.FieldValue.serverTimestamp(),
+        lastActivityAt: firebase.firestore.FieldValue.serverTimestamp()
+    };
+
+    // Handle game end
+    if (result.gameOver) {
+        updates.status = 'completed';
+        updates.winner = result.winner;
+        updates.winningCombo = result.winningCombo;
+
+        // Update player stats
+        await updateMultiplayerStats(result);
+    }
+
+    await gameRef.update(updates);
+}
+
+// Check for winner
+function checkWinner(board) {
+    // Check all winning combinations
+    for (let combo of winningCombinations) {
+        const [a, b, c] = combo;
+        if (board[a] && board[a] === board[b] && board[a] === board[c]) {
+            return {
+                gameOver: true,
+                winner: board[a] === playerSymbol ? playerRole : (playerRole === 'host' ? 'guest' : 'host'),
+                winningCombo: combo
+            };
+        }
+    }
+
+    // Check for tie
+    if (!board.includes('')) {
+        return { gameOver: true, winner: 'tie', winningCombo: null };
+    }
+
+    return { gameOver: false, winner: null, winningCombo: null };
+}
+
+// Update multiplayer stats
+async function updateMultiplayerStats(result) {
+    if (!currentUser) {
+        // Save to localStorage for anonymous users
+        if (result.winner === playerRole) {
+            saveAnonymousStatsToLocal({ type: 'win', winner: playerSymbol });
+        } else if (result.winner === 'tie') {
+            saveAnonymousStatsToLocal({ type: 'tie' });
+        }
+        return;
+    }
+
+    try {
+        const userRef = db.collection('users').doc(currentUser.uid);
+        const updates = {};
+
+        if (result.winner === playerRole) {
+            // Won
+            updates.multiplayerWins = firebase.firestore.FieldValue.increment(1);
+            if (playerSymbol === 'X') {
+                updates.winsAsX = firebase.firestore.FieldValue.increment(1);
+            } else {
+                updates.winsAsO = firebase.firestore.FieldValue.increment(1);
+            }
+        } else if (result.winner === 'tie') {
+            // Tie
+            updates.multiplayerTies = firebase.firestore.FieldValue.increment(1);
+            updates.ties = firebase.firestore.FieldValue.increment(1);
+        } else {
+            // Lost
+            updates.multiplayerLosses = firebase.firestore.FieldValue.increment(1);
+        }
+
+        updates.lastUpdated = firebase.firestore.FieldValue.serverTimestamp();
+
+        await userRef.update(updates);
+        await loadUserStats(currentUser.uid);
+    } catch (error) {
+        console.error('Error updating multiplayer stats:', error);
+    }
+}
+
+// ===== UI MANAGEMENT =====
+
+// Show error message
+function showErrorMessage(message) {
+    statusDisplay.textContent = message;
+    statusDisplay.style.color = '#f44336';
+
+    setTimeout(() => {
+        statusDisplay.style.color = '';
+        if (gameMode === 'online') {
+            updateMultiplayerUI({ currentTurn: isMyTurn ? playerRole : (playerRole === 'host' ? 'guest' : 'host') });
+        }
+    }, 3000);
+}
+
+// Show game mode selection
+function showGameModeSelection() {
+    document.getElementById('gameModeSelection').style.display = 'block';
+    document.getElementById('onlineGameOptions').style.display = 'none';
+    document.getElementById('createGameUI').style.display = 'none';
+    document.getElementById('joinGameUI').style.display = 'none';
+    document.getElementById('multiplayerInfo').style.display = 'none';
+    document.getElementById('board').style.display = 'none';
+    document.getElementById('resetButton').style.display = 'none';
+}
+
+// Show online options
+function showOnlineOptions() {
+    document.getElementById('gameModeSelection').style.display = 'none';
+    document.getElementById('onlineGameOptions').style.display = 'block';
+}
+
+// Show create game UI
+function showCreateGameUI(roomCode) {
+    document.getElementById('onlineGameOptions').style.display = 'none';
+    document.getElementById('createGameUI').style.display = 'block';
+    document.getElementById('roomCodeDisplay').textContent = roomCode;
+    document.getElementById('board').style.display = 'grid';
+    statusDisplay.textContent = 'Waiting for opponent...';
+}
+
+// Show join game UI
+function showJoinGameUI() {
+    document.getElementById('onlineGameOptions').style.display = 'none';
+    document.getElementById('joinGameUI').style.display = 'block';
+}
+
+// Show active game UI
+function showActiveGameUI() {
+    document.getElementById('gameModeSelection').style.display = 'none';
+    document.getElementById('createGameUI').style.display = 'none';
+    document.getElementById('joinGameUI').style.display = 'none';
+    document.getElementById('onlineGameOptions').style.display = 'none';
+    document.getElementById('multiplayerInfo').style.display = 'block';
+    document.getElementById('board').style.display = 'grid';
+    document.getElementById('resetButton').style.display = 'none';
+}
+
+// Show local game UI
+function showLocalGameUI() {
+    document.getElementById('gameModeSelection').style.display = 'none';
+    document.getElementById('multiplayerInfo').style.display = 'none';
+    document.getElementById('board').style.display = 'grid';
+    document.getElementById('resetButton').style.display = 'block';
+    statusDisplay.textContent = `Player ${currentPlayer}'s turn`;
+}
+
+// Update multiplayer UI
+function updateMultiplayerUI(gameData) {
+    // Update opponent name
+    if (opponentDisplayName) {
+        document.getElementById('opponentName').textContent = opponentDisplayName;
+    }
+
+    // Update your symbol
+    document.getElementById('yourSymbol').textContent = playerSymbol;
+
+    // Update turn indicator
+    if (isMyTurn) {
+        statusDisplay.textContent = "Your turn";
+        statusDisplay.className = 'my-turn';
+    } else {
+        statusDisplay.textContent = `${opponentDisplayName}'s turn`;
+        statusDisplay.className = 'their-turn';
+    }
+}
+
+// Check opponent connection
+function checkOpponentConnection(gameData) {
+    const now = Date.now();
+    const opponentField = playerRole === 'host' ? 'guestLastSeen' : 'hostLastSeen';
+    const lastSeen = gameData[opponentField]?.toMillis();
+
+    if (!lastSeen) return;
+
+    const timeSince = now - lastSeen;
+    const statusDot = document.querySelector('.status-dot');
+    const statusText = document.querySelector('.status-text');
+
+    if (timeSince > 30000) {  // 30 seconds
+        statusDot.classList.add('disconnected');
+        statusText.textContent = 'Opponent disconnected';
+    } else {
+        statusDot.classList.remove('disconnected');
+        statusText.textContent = 'Connected';
+    }
+}
+
+// Setup multiplayer event listeners
+function setupMultiplayerListeners() {
+    // Local game button
+    const localGameBtn = document.getElementById('localGameBtn');
+    if (localGameBtn) {
+        localGameBtn.addEventListener('click', () => {
+            gameMode = 'local';
+            resetGame();
+            showLocalGameUI();
+        });
+    }
+
+    // Online game button
+    const onlineGameBtn = document.getElementById('onlineGameBtn');
+    if (onlineGameBtn) {
+        onlineGameBtn.addEventListener('click', showOnlineOptions);
+    }
+
+    // Create game button
+    const createGameBtn = document.getElementById('createGameBtn');
+    if (createGameBtn) {
+        createGameBtn.addEventListener('click', createMultiplayerGame);
+    }
+
+    // Join game button
+    const joinGameBtn = document.getElementById('joinGameBtn');
+    if (joinGameBtn) {
+        joinGameBtn.addEventListener('click', showJoinGameUI);
+    }
+
+    // Submit join button
+    const submitJoinBtn = document.getElementById('submitJoinBtn');
+    if (submitJoinBtn) {
+        submitJoinBtn.addEventListener('click', () => {
+            const roomCode = document.getElementById('roomCodeInput').value.toUpperCase().trim();
+            if (roomCode.length === 6) {
+                joinMultiplayerGame(roomCode);
+            } else {
+                showErrorMessage('Please enter a valid 6-character code');
+            }
+        });
+    }
+
+    // Room code input enter key
+    const roomCodeInput = document.getElementById('roomCodeInput');
+    if (roomCodeInput) {
+        roomCodeInput.addEventListener('keypress', (e) => {
+            if (e.key === 'Enter') {
+                submitJoinBtn.click();
+            }
+        });
+        // Auto-uppercase input
+        roomCodeInput.addEventListener('input', (e) => {
+            e.target.value = e.target.value.toUpperCase();
+        });
+    }
+
+    // Copy code button
+    const copyCodeBtn = document.getElementById('copyCodeBtn');
+    if (copyCodeBtn) {
+        copyCodeBtn.addEventListener('click', () => {
+            const roomCode = document.getElementById('roomCodeDisplay').textContent;
+            navigator.clipboard.writeText(roomCode).then(() => {
+                copyCodeBtn.textContent = '✓ Copied!';
+                setTimeout(() => {
+                    copyCodeBtn.textContent = '📋 Copy Code';
+                }, 2000);
+            }).catch(err => {
+                console.error('Failed to copy:', err);
+                showErrorMessage('Failed to copy code');
+            });
+        });
+    }
+
+    // Leave game button
+    const leaveGameBtn = document.getElementById('leaveGameBtn');
+    if (leaveGameBtn) {
+        leaveGameBtn.addEventListener('click', leaveGame);
+    }
+
+    // Cancel game button
+    const cancelGameBtn = document.getElementById('cancelGameBtn');
+    if (cancelGameBtn) {
+        cancelGameBtn.addEventListener('click', leaveGame);
+    }
+
+    // Back buttons
+    const backToModesBtn = document.getElementById('backToModesBtn');
+    if (backToModesBtn) {
+        backToModesBtn.addEventListener('click', showGameModeSelection);
+    }
+
+    const backToOnlineBtn = document.getElementById('backToOnlineBtn');
+    if (backToOnlineBtn) {
+        backToOnlineBtn.addEventListener('click', showOnlineOptions);
+    }
 }
 
 // Initialize game
@@ -321,28 +1172,74 @@ function init() {
     // Initialize Firebase
     initializeFirebase();
 
+    // Initialize anonymous stats
+    initAnonymousStats();
+
     // Auth UI event listeners
     setupAuthListeners();
+
+    // Multiplayer event listeners
+    setupMultiplayerListeners();
+
+    // Show game mode selection
+    showGameModeSelection();
+
+    // Cleanup old games periodically (every 5 minutes)
+    setInterval(cleanupOldGames, 5 * 60 * 1000);
 }
 
 // Handle cell click
-function handleCellClick(event) {
+async function handleCellClick(event) {
     const cell = event.target;
     const index = parseInt(cell.getAttribute('data-index'));
 
-    // Check if cell is already filled or game is over
-    if (board[index] !== '' || !gameActive) {
+    // LOCAL GAME MODE
+    if (gameMode === 'local') {
+        // Check if cell is already filled or game is over
+        if (board[index] !== '' || !gameActive) {
+            return;
+        }
+
+        // Update board and UI
+        board[index] = currentPlayer;
+        cell.textContent = currentPlayer;
+        cell.classList.add(currentPlayer.toLowerCase());
+        cell.classList.add('disabled');
+
+        // Check for winner or tie
+        checkResult();
         return;
     }
 
-    // Update board and UI
-    board[index] = currentPlayer;
-    cell.textContent = currentPlayer;
-    cell.classList.add(currentPlayer.toLowerCase());
-    cell.classList.add('disabled');
+    // ONLINE GAME MODE
+    if (gameMode === 'online') {
+        // Validate move
+        if (board[index] !== '') return;
+        if (!gameActive) return;
+        if (!isMyTurn) {
+            showErrorMessage("It's not your turn!");
+            return;
+        }
 
-    // Check for winner or tie
-    checkResult();
+        try {
+            // Optimistic update
+            board[index] = playerSymbol;
+            cell.textContent = playerSymbol;
+            cell.classList.add(playerSymbol.toLowerCase());
+            cell.classList.add('disabled');
+
+            // Update Firestore
+            await makeMove(index);
+
+        } catch (error) {
+            // Rollback on error
+            board[index] = '';
+            cell.textContent = '';
+            cell.classList.remove(playerSymbol.toLowerCase(), 'disabled');
+            showErrorMessage('Failed to make move. Please try again.');
+            console.error('Move error:', error);
+        }
+    }
 }
 
 // Check game result
@@ -437,6 +1334,12 @@ function createExplosion(cell) {
 
 // Reset game
 function resetGame() {
+    // Prevent reset in online mode
+    if (gameMode === 'online') {
+        showErrorMessage('Use "Leave Game" to exit online game');
+        return;
+    }
+
     board = ['', '', '', '', '', '', '', '', ''];
     currentPlayer = 'X';
     gameActive = true;
